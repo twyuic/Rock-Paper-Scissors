@@ -1,46 +1,79 @@
 import random
+import numpy as np
+from sklearn.linear_model import SGDClassifier
+
+model = SGDClassifier(loss="log_loss", max_iter=5, tol=None)
+trained = False
+history_X, history_y = [], []
 
 def player(prev_play, opponent_history=[]):
-    opponent_history.append(prev_play)
-    moves = ["R", "P", "S"]
-    n = len(opponent_history)
+    global model, trained, history_X, history_y
 
-    if n < 2:
+    moves = ["R", "P", "S"]
+    move_map = {"R":0, "P":1, "S":2}
+    move_map_rev = {0:"R", 1:"P", 2:"S"}
+
+    if prev_play == "":
         return random.choice(moves)
 
-    pattern_scores = {}
+    opponent_history.append(prev_play)
+    n = len(opponent_history)
 
-    for length in range(1, 6):
+    if n < 4:
+        return random.choice(moves)
+
+    # pre training data
+    N = 3
+    if n > N:
+        seq = opponent_history[-N-1:-1]
+        if all(m in move_map for m in seq):
+            X = [move_map[m] for m in seq]
+            y = move_map[prev_play]
+            history_X.append(X)
+            history_y.append(y)
+
+            if len(history_y) >= 20:  # data
+                model.partial_fit([X], [y], classes=[0,1,2])
+                trained = True
+
+    # prediction
+    preds = []
+
+    # ml
+    if trained:
+        recent = [move_map[m] for m in opponent_history[-N:]]
+        preds.append(model.predict([recent])[0])
+
+    # pattern(2-5)
+    for length in range(2, 6):
         if n >= length:
             last_seq = "".join(opponent_history[-length:])
             for i in range(n - length):
                 seq = "".join(opponent_history[i:i+length])
-                next_move = opponent_history[i+length]
                 if seq == last_seq:
-                    weight = 0.7 if length in [2,4] else 0.3
-                    pattern_scores[next_move] = pattern_scores.get(next_move, 0) + weight
+                    preds.append(move_map[opponent_history[i+length]])
 
-
+    # last 20
     recent = opponent_history[-20:]
-    counts = {"R": recent.count("R"), "P": recent.count("P"), "S": recent.count("S")}
-    for move in moves:
-        pattern_scores[move] = pattern_scores.get(move, 0) + counts[move] * 0.2
+    if recent:
+        counts = {"R": recent.count("R"), "P": recent.count("P"), "S": recent.count("S")}
+        most = max(counts, key=counts.get)
+        preds.append(move_map[most])
 
-
-    if pattern_scores:
-        predicted = max(pattern_scores, key=pattern_scores.get)
+    # vote
+    if preds:
+        predicted = max(set(preds), key=preds.count)
     else:
-        predicted = random.choice(moves)
+        predicted = random.choice([0,1,2])
 
-    counter_map = {"R":"P", "P":"S", "S":"R"}
+    # against
+    counter_map = {0:1, 1:2, 2:0}
     counter_move = counter_map[predicted]
 
 
-    if n > 20 and random.random() < 0.04:
-        return random.choice(moves)
-    elif n > 10 and random.random() < 0.02:
-        return random.choice(moves)
+    if random.random() < 0.005:
+        counter_move = random.choice([0,1,2])
 
-    return counter_move
+    return move_map_rev[counter_move]
 
-# i don't like you, Abbey.
+# i dnot like you, Abbey.
